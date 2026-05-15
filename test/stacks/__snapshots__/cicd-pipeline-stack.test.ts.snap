@@ -1,0 +1,1661 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`CicdPipelineStack matches snapshot 1`] = `
+{
+  "Outputs": {
+    "ContentsBucketName": {
+      "Value": {
+        "Ref": "ContentsBucket571B0902",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691": {
+      "DependsOn": [
+        "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+      ],
+      "Properties": {
+        "Code": {
+          "ZipFile": "import boto3  # type: ignore
+import json
+import logging
+import urllib.request
+
+s3 = boto3.client("s3")
+
+EVENTBRIDGE_CONFIGURATION = 'EventBridgeConfiguration'
+CONFIGURATION_TYPES = ["TopicConfigurations", "QueueConfigurations", "LambdaFunctionConfigurations"]
+
+def handler(event: dict, context):
+  response_status = "SUCCESS"
+  error_message = ""
+  try:
+    props = event["ResourceProperties"]
+    notification_configuration = props["NotificationConfiguration"]
+    managed = props.get('Managed', 'true').lower() == 'true'
+    skipDestinationValidation = props.get('SkipDestinationValidation', 'false').lower() == 'true'
+    stack_id = event['StackId']
+    old = event.get("OldResourceProperties", {}).get("NotificationConfiguration", {})
+    if managed:
+      config = handle_managed(event["RequestType"], notification_configuration)
+    else:
+      config = handle_unmanaged(props["BucketName"], stack_id, event["RequestType"], notification_configuration, old)
+    s3.put_bucket_notification_configuration(Bucket=props["BucketName"], NotificationConfiguration=config, SkipDestinationValidation=skipDestinationValidation)
+  except Exception as e:
+    logging.exception("Failed to put bucket notification configuration")
+    response_status = "FAILED"
+    error_message = f"Error: {str(e)}. "
+  finally:
+    submit_response(event, context, response_status, error_message)
+
+def handle_managed(request_type, notification_configuration):
+  if request_type == 'Delete':
+    return {}
+  return notification_configuration
+
+def handle_unmanaged(bucket, stack_id, request_type, notification_configuration, old):
+  def get_id(n):
+    n['Id'] = ''
+    sorted_notifications = sort_filter_rules(n)
+    strToHash=json.dumps(sorted_notifications, sort_keys=True).replace('"Name": "prefix"', '"Name": "Prefix"').replace('"Name": "suffix"', '"Name": "Suffix"')
+    return f"{stack_id}-{hash(strToHash)}"
+  def with_id(n):
+    n['Id'] = get_id(n)
+    return n
+
+  external_notifications = {}
+  existing_notifications = s3.get_bucket_notification_configuration(Bucket=bucket)
+  for t in CONFIGURATION_TYPES:
+    if request_type == 'Update':
+        old_incoming_ids = [get_id(n) for n in old.get(t, [])]
+        external_notifications[t] = [n for n in existing_notifications.get(t, []) if not get_id(n) in old_incoming_ids]      
+    elif request_type == 'Delete':
+        external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'].startswith(f"{stack_id}-")]
+    elif request_type == 'Create':
+        external_notifications[t] = [n for n in existing_notifications.get(t, [])]
+  if EVENTBRIDGE_CONFIGURATION in existing_notifications:
+    external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]
+
+  if request_type == 'Delete':
+    return external_notifications
+
+  notifications = {}
+  for t in CONFIGURATION_TYPES:
+    external = external_notifications.get(t, [])
+    incoming = [with_id(n) for n in notification_configuration.get(t, [])]
+    notifications[t] = external + incoming
+
+  if EVENTBRIDGE_CONFIGURATION in notification_configuration:
+    notifications[EVENTBRIDGE_CONFIGURATION] = notification_configuration[EVENTBRIDGE_CONFIGURATION]
+  elif EVENTBRIDGE_CONFIGURATION in external_notifications:
+    notifications[EVENTBRIDGE_CONFIGURATION] = external_notifications[EVENTBRIDGE_CONFIGURATION]
+
+  return notifications
+
+def submit_response(event: dict, context, response_status: str, error_message: str):
+  response_body = json.dumps(
+    {
+      "Status": response_status,
+      "Reason": f"{error_message}See the details in CloudWatch Log Stream: {context.log_stream_name}",
+      "PhysicalResourceId": event.get("PhysicalResourceId") or event["LogicalResourceId"],
+      "StackId": event["StackId"],
+      "RequestId": event["RequestId"],
+      "LogicalResourceId": event["LogicalResourceId"],
+      "NoEcho": False,
+    }
+  ).encode("utf-8")
+  headers = {"content-type": "", "content-length": str(len(response_body))}
+  try:
+    req = urllib.request.Request(url=event["ResponseURL"], headers=headers, data=response_body, method="PUT")
+    with urllib.request.urlopen(req) as response:
+      print(response.read().decode("utf-8"))
+    print("Status code: " + response.reason)
+  except Exception as e:
+      print("send(..) failed executing request.urlopen(..): " + str(e))
+
+def sort_filter_rules(json_obj):
+  if not isinstance(json_obj, dict):
+      return json_obj
+  for key, value in json_obj.items():
+      if isinstance(value, dict):
+          json_obj[key] = sort_filter_rules(value)
+      elif isinstance(value, list):
+          json_obj[key] = [sort_filter_rules(item) for item in value]
+  if "Filter" in json_obj and "Key" in json_obj["Filter"] and "FilterRules" in json_obj["Filter"]["Key"]:
+      filter_rules = json_obj["Filter"]["Key"]["FilterRules"]
+      sorted_filter_rules = sorted(filter_rules, key=lambda x: x["Name"])
+      json_obj["Filter"]["Key"]["FilterRules"] = sorted_filter_rules
+  return json_obj",
+        },
+        "Description": "AWS CloudFormation handler for "Custom::S3BucketNotifications" resources (@aws-cdk/aws-s3)",
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BuildAssetsBucket8C831CC8": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:cr-owned:web:4c3bcffa",
+            "Value": "true",
+          },
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled",
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "BuildAssetsBucketPolicy291A523F": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "BuildAssetsBucket8C831CC8",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BuildAssetsBucket8C831CC8",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "BuildAssetsBucket8C831CC8",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "ContentsBucket571B0902": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled",
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "ContentsBucketNotifications15ACBFC2": {
+      "DependsOn": [
+        "ContentsBucketNotificationsHandlerPolicyB1AEEE09",
+        "ContentsBucketPolicyF045EE64",
+      ],
+      "Properties": {
+        "BucketName": {
+          "Ref": "ContentsBucket571B0902",
+        },
+        "Managed": true,
+        "NotificationConfiguration": {
+          "EventBridgeConfiguration": {},
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691",
+            "Arn",
+          ],
+        },
+        "SkipDestinationValidation": false,
+      },
+      "Type": "Custom::S3BucketNotifications",
+    },
+    "ContentsBucketNotificationsHandlerPolicyB1AEEE09": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:PutBucketNotification",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ContentsBucket571B0902",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ContentsBucketNotificationsHandlerPolicyB1AEEE09",
+        "Roles": [
+          {
+            "Ref": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ContentsBucketPolicyF045EE64": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "ContentsBucket571B0902",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ContentsBucket571B0902",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ContentsBucket571B0902",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536": {
+      "DependsOn": [
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF",
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "3423a042b818e31c1e34a19d6689ab2e5f9b70fcbe9e71df66f241b20a200bd9.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "AWS_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+          },
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "WebAssetsDeploymentAwsCliLayerC7E9E556",
+          },
+        ],
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":s3:::cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":s3:::cdk-hnb659fds-assets-123456789012-ap-northeast-1/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BuildAssetsBucket8C831CC8",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "BuildAssetsBucket8C831CC8",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF",
+        "Roles": [
+          {
+            "Ref": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineArtifactsBucketF7FEC367": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+              },
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "DeploymentPipelineArtifactsBucketPolicyC40D1956": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "DeploymentPipelineArtifactsBucketF7FEC367",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineArtifactsBucketF7FEC367",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DeploymentPipelineArtifactsBucketF7FEC367",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "DeploymentPipelineBuildAndScanF9EC4FF2": {
+      "Properties": {
+        "Artifacts": {
+          "Type": "CODEPIPELINE",
+        },
+        "Cache": {
+          "Type": "NO_CACHE",
+        },
+        "EncryptionKey": "alias/aws/s3",
+        "Environment": {
+          "ComputeType": "BUILD_GENERAL1_SMALL",
+          "EnvironmentVariables": [
+            {
+              "Name": "ECR_REPO_URI",
+              "Type": "PLAINTEXT",
+              "Value": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::Select": [
+                        4,
+                        {
+                          "Fn::Split": [
+                            ":",
+                            {
+                              "Fn::GetAtt": [
+                                "EcrRepository4D7B3EE1",
+                                "Arn",
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    ".dkr.ecr.",
+                    {
+                      "Fn::Select": [
+                        3,
+                        {
+                          "Fn::Split": [
+                            ":",
+                            {
+                              "Fn::GetAtt": [
+                                "EcrRepository4D7B3EE1",
+                                "Arn",
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    ".",
+                    {
+                      "Ref": "AWS::URLSuffix",
+                    },
+                    "/",
+                    {
+                      "Ref": "EcrRepository4D7B3EE1",
+                    },
+                  ],
+                ],
+              },
+            },
+            {
+              "Name": "CONTENTS_BUCKET",
+              "Type": "PLAINTEXT",
+              "Value": {
+                "Ref": "ContentsBucket571B0902",
+              },
+            },
+            {
+              "Name": "ASSETS_BUCKET",
+              "Type": "PLAINTEXT",
+              "Value": {
+                "Ref": "BuildAssetsBucket8C831CC8",
+              },
+            },
+            {
+              "Name": "CONTAINER_NAME",
+              "Type": "PLAINTEXT",
+              "Value": "App",
+            },
+          ],
+          "Image": "aws/codebuild/amazonlinux-aarch64-standard:3.0",
+          "ImagePullCredentialsType": "CODEBUILD",
+          "PrivilegedMode": true,
+          "Type": "ARM_CONTAINER",
+        },
+        "ServiceRole": {
+          "Fn::GetAtt": [
+            "DeploymentPipelineBuildAndScanRole96A3E491",
+            "Arn",
+          ],
+        },
+        "Source": {
+          "BuildSpec": "version: "0.2"
+env:
+  shell: bash
+phases:
+  install:
+    commands:
+      - curl -sSfL https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-arm64 -o /usr/local/bin/hadolint
+      - chmod +x /usr/local/bin/hadolint
+  pre_build:
+    commands:
+      - IMAGE_TAG=$(aws s3api get-object-tagging --bucket "$CONTENTS_BUCKET" --key contents.zip | jq -r '.TagSet[] | select(.Key=="version") | .Value')
+      - 'test -n "$IMAGE_TAG" -a "$IMAGE_TAG" != "null" || { echo "ERROR: version tag missing on contents.zip"; exit 1; }'
+      - mkdir -p /tmp/web
+      - aws s3 sync "s3://\${ASSETS_BUCKET}/web/" /tmp/web/
+      - 'test -d ./html || { echo "ERROR: contents.zip must contain html/ directory"; exit 1; }'
+      - cp -R ./html /tmp/web/html
+      - hadolint --failure-threshold error /tmp/web/Dockerfile
+  build:
+    commands:
+      - aws ecr get-login-password | docker login --username AWS --password-stdin "\${ECR_REPO_URI%/*}"
+      - docker build -t "\${ECR_REPO_URI}:\${IMAGE_TAG}" /tmp/web
+      - docker push "\${ECR_REPO_URI}:\${IMAGE_TAG}"
+  post_build:
+    commands:
+      - REPO_NAME="\${ECR_REPO_URI##*/}"
+      - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "\${ECR_REPO_URI}:\${IMAGE_TAG}" | cut -d@ -f2)
+      - IMAGE_URI="\${ECR_REPO_URI}@\${IMAGE_DIGEST}"
+      - for i in $(seq 1 40); do STATUS=$(aws ecr describe-image-scan-findings --repository-name "$REPO_NAME" --image-id imageTag="$IMAGE_TAG" --query 'imageScanStatus.status' --output text 2>/dev/null || echo PENDING); { [ "$STATUS" = "ACTIVE" ] || [ "$STATUS" = "COMPLETE" ]; } && break; sleep 15; done
+      - CRITICAL=$(aws ecr describe-image-scan-findings --repository-name "$REPO_NAME" --image-id imageTag="$IMAGE_TAG" --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text 2>/dev/null || echo 0)
+      - 'if [ "$CRITICAL" != "None" ] && [ "$CRITICAL" -gt 0 ]; then echo "ERROR: Critical vulnerabilities: $CRITICAL"; exit 1; fi'
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$IMAGE_URI" > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
+  base-directory: "."
+",
+          "Type": "CODEPIPELINE",
+        },
+        "TimeoutInMinutes": 30,
+      },
+      "Type": "AWS::CodeBuild::Project",
+    },
+    "DeploymentPipelineBuildAndScanRole96A3E491": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codebuild.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineBuildAndScanRoleDefaultPolicy1F2430B5": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":logs:ap-northeast-1:123456789012:log-group:/aws/codebuild/",
+                      {
+                        "Ref": "DeploymentPipelineBuildAndScanF9EC4FF2",
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":logs:ap-northeast-1:123456789012:log-group:/aws/codebuild/",
+                      {
+                        "Ref": "DeploymentPipelineBuildAndScanF9EC4FF2",
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "codebuild:CreateReportGroup",
+                "codebuild:CreateReport",
+                "codebuild:UpdateReport",
+                "codebuild:BatchPutTestCases",
+                "codebuild:BatchPutCodeCoverages",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":codebuild:ap-northeast-1:123456789012:report-group/",
+                    {
+                      "Ref": "DeploymentPipelineBuildAndScanF9EC4FF2",
+                    },
+                    "-*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:CompleteLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EcrRepository4D7B3EE1",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ContentsBucket571B0902",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ContentsBucket571B0902",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BuildAssetsBucket8C831CC8",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "BuildAssetsBucket8C831CC8",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObjectTagging",
+                "s3:GetObjectVersionTagging",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "ContentsBucket571B0902",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecr:DescribeImageScanFindings",
+                "inspector2:ListFindings",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineArtifactsBucketF7FEC367",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DeploymentPipelineArtifactsBucketF7FEC367",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineBuildAndScanRoleDefaultPolicy1F2430B5",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineBuildAndScanRole96A3E491",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleAA729744": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineRole5DD1A636",
+                    "Arn",
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleDefaultPolicy445384B3": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "codebuild:BatchGetBuilds",
+                "codebuild:StartBuild",
+                "codebuild:StopBuild",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DeploymentPipelineBuildAndScanF9EC4FF2",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleDefaultPolicy445384B3",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleAA729744",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineContentsUploadTriggerB13F7897": {
+      "Properties": {
+        "EventPattern": {
+          "detail": {
+            "bucket": {
+              "name": [
+                {
+                  "Ref": "ContentsBucket571B0902",
+                },
+              ],
+            },
+            "object": {
+              "key": [
+                "contents.zip",
+              ],
+            },
+          },
+          "detail-type": [
+            "Object Created",
+          ],
+          "source": [
+            "aws.s3",
+          ],
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":codepipeline:ap-northeast-1:123456789012:",
+                  {
+                    "Ref": "DeploymentPipelineD53681EF",
+                  },
+                ],
+              ],
+            },
+            "Id": "Target0",
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "DeploymentPipelineEventsRole1B2F14A0",
+                "Arn",
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "DeploymentPipelineD53681EF": {
+      "DependsOn": [
+        "DeploymentPipelineRoleDefaultPolicy2EEF6306",
+        "DeploymentPipelineRole5DD1A636",
+      ],
+      "Properties": {
+        "ArtifactStore": {
+          "Location": {
+            "Ref": "DeploymentPipelineArtifactsBucketF7FEC367",
+          },
+          "Type": "S3",
+        },
+        "PipelineType": "V2",
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "DeploymentPipelineRole5DD1A636",
+            "Arn",
+          ],
+        },
+        "Stages": [
+          {
+            "Actions": [
+              {
+                "ActionTypeId": {
+                  "Category": "Source",
+                  "Owner": "AWS",
+                  "Provider": "S3",
+                  "Version": "1",
+                },
+                "Configuration": {
+                  "PollForSourceChanges": false,
+                  "S3Bucket": {
+                    "Ref": "ContentsBucket571B0902",
+                  },
+                  "S3ObjectKey": "contents.zip",
+                },
+                "Name": "S3Source",
+                "OutputArtifacts": [
+                  {
+                    "Name": "SourceArtifact",
+                  },
+                ],
+                "RoleArn": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineSourceS3SourceCodePipelineActionRole5BC796DF",
+                    "Arn",
+                  ],
+                },
+                "RunOrder": 1,
+              },
+            ],
+            "Name": "Source",
+          },
+          {
+            "Actions": [
+              {
+                "ActionTypeId": {
+                  "Category": "Build",
+                  "Owner": "AWS",
+                  "Provider": "CodeBuild",
+                  "Version": "1",
+                },
+                "Configuration": {
+                  "ProjectName": {
+                    "Ref": "DeploymentPipelineBuildAndScanF9EC4FF2",
+                  },
+                },
+                "InputArtifacts": [
+                  {
+                    "Name": "SourceArtifact",
+                  },
+                ],
+                "Name": "BuildAndScan",
+                "OutputArtifacts": [
+                  {
+                    "Name": "BuildArtifact",
+                  },
+                ],
+                "RoleArn": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleAA729744",
+                    "Arn",
+                  ],
+                },
+                "RunOrder": 1,
+              },
+            ],
+            "Name": "Build",
+          },
+          {
+            "Actions": [
+              {
+                "ActionTypeId": {
+                  "Category": "Deploy",
+                  "Owner": "AWS",
+                  "Provider": "ECS",
+                  "Version": "1",
+                },
+                "Configuration": {
+                  "ClusterName": "test-cluster",
+                  "DeploymentTimeout": 60,
+                  "ServiceName": "test-service",
+                },
+                "InputArtifacts": [
+                  {
+                    "Name": "BuildArtifact",
+                  },
+                ],
+                "Name": "EcsDeploy",
+                "RoleArn": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineDeployEcsDeployCodePipelineActionRole08C852F6",
+                    "Arn",
+                  ],
+                },
+                "RunOrder": 1,
+              },
+            ],
+            "Name": "Deploy",
+          },
+        ],
+      },
+      "Type": "AWS::CodePipeline::Pipeline",
+    },
+    "DeploymentPipelineDeployEcsDeployCodePipelineActionRole08C852F6": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineRole5DD1A636",
+                    "Arn",
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineDeployEcsDeployCodePipelineActionRoleDefaultPolicy5A897B9D": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ecs:DescribeServices",
+                "ecs:DescribeTaskDefinition",
+                "ecs:DescribeTasks",
+                "ecs:ListTasks",
+                "ecs:RegisterTaskDefinition",
+                "ecs:TagResource",
+                "ecs:UpdateService",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "iam:PassRole",
+              "Condition": {
+                "StringEqualsIfExists": {
+                  "iam:PassedToService": [
+                    "ec2.amazonaws.com",
+                    "ecs-tasks.amazonaws.com",
+                  ],
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineArtifactsBucketF7FEC367",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DeploymentPipelineArtifactsBucketF7FEC367",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineDeployEcsDeployCodePipelineActionRoleDefaultPolicy5A897B9D",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineDeployEcsDeployCodePipelineActionRole08C852F6",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineEventsRole1B2F14A0": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineEventsRoleDefaultPolicy16FBDD44": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "codepipeline:StartPipelineExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":codepipeline:ap-northeast-1:123456789012:",
+                    {
+                      "Ref": "DeploymentPipelineD53681EF",
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineEventsRoleDefaultPolicy16FBDD44",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineEventsRole1B2F14A0",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineRole5DD1A636": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codepipeline.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineRoleDefaultPolicy2EEF6306": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineArtifactsBucketF7FEC367",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DeploymentPipelineArtifactsBucketF7FEC367",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DeploymentPipelineSourceS3SourceCodePipelineActionRole5BC796DF",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DeploymentPipelineBuildBuildAndScanCodePipelineActionRoleAA729744",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DeploymentPipelineDeployEcsDeployCodePipelineActionRole08C852F6",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineRoleDefaultPolicy2EEF6306",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineRole5DD1A636",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DeploymentPipelineSourceS3SourceCodePipelineActionRole5BC796DF": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineRole5DD1A636",
+                    "Arn",
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DeploymentPipelineSourceS3SourceCodePipelineActionRoleDefaultPolicy2EC63BB4": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ContentsBucket571B0902",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ContentsBucket571B0902",
+                          "Arn",
+                        ],
+                      },
+                      "/contents.zip",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "DeploymentPipelineArtifactsBucketF7FEC367",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "DeploymentPipelineArtifactsBucketF7FEC367",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DeploymentPipelineSourceS3SourceCodePipelineActionRoleDefaultPolicy2EC63BB4",
+        "Roles": [
+          {
+            "Ref": "DeploymentPipelineSourceS3SourceCodePipelineActionRole5BC796DF",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "EcrRepository4D7B3EE1": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true,
+        },
+        "ImageTagMutability": "IMMUTABLE",
+        "LifecyclePolicy": {
+          "LifecyclePolicyText": "{"rules":[{"rulePriority":1,"selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}",
+        },
+        "RepositoryPolicyText": {
+          "Statement": [
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::123456789012:role/test-task-exec-role",
+              },
+              "Sid": "AllowPullFromTaskExecutionRole",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::ECR::Repository",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "WebAssetsDeploymentAwsCliLayerC7E9E556": {
+      "Properties": {
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "e2659170a0721541efa761a8d5d04d5e36cbbf691c4b15a9053002b7c825055d.zip",
+        },
+        "Description": "/opt/awscli/aws",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+    "WebAssetsDeploymentCustomResourceA024F4F3": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "DestinationBucketKeyPrefix": "web",
+        "DestinationBucketName": {
+          "Ref": "BuildAssetsBucket8C831CC8",
+        },
+        "OutputObjectKeys": true,
+        "Prune": true,
+        "RetainOnDelete": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn",
+          ],
+        },
+        "SourceBucketNames": [
+          "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+        ],
+        "SourceObjectKeys": [
+          "a8a2e75bcb8b26f255ac1c6f5e228e9b1e02ac5cddfad623133b482f69adf777.zip",
+        ],
+        "WaitForDistributionInvalidation": true,
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
